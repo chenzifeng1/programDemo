@@ -1,5 +1,4 @@
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.*;
 
 public class ThreadPoolDemo implements Runnable {
 
@@ -15,6 +14,10 @@ public class ThreadPoolDemo implements Runnable {
 //      Executors.newScheduledThreadPool();//定时任务
 //      Executors.newCachedThreadPool();//可缓存的线程池
 //      Executors.newSingleThreadExecutor();//单个线程的线程池
+
+        Executor e = new ThreadPoolExecutor(0,Integer.MAX_VALUE,
+                60L, TimeUnit.SECONDS,
+                new SynchronousQueue<Runnable>());
 
 //      Executors.newWorkStealingPool();工作窃取
         ExecutorService executorService = Executors.newFixedThreadPool(5); //通过线程池限制线程创建数码
