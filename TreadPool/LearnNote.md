@@ -32,54 +32,73 @@ public class ThreadPoolExecutor{
 线程池：创建一个线程池，所有客户端需要执行的任务都添加阻塞队列里面，线程池中来轮询阻塞队列中的任务。
 - 回收非核心线程：可以设定阻塞时间，当阻塞队列一定时间内都没有任务进来，可以认为线程池处于了空闲状态，可以回收非核心线程来减少资源占用。回收线程只要break掉循环即可，因为run()方法结束之后线程自动被回收。
 - 是否是核心线程，取决于参数
+
 ```java
 public class ThreadPoolExecutor{
+
+    private final AtomicInteger ctl = new AtomicInteger(ctlOf(RUNNING, 0)); //ctl标识线程池状态信息，是一个包含两个概念的原子整数
+    private static final int COUNT_BITS = Integer.SIZE - 3;
+    private static final int CAPACITY   = (1 << COUNT_BITS) - 1;
+
+    // runState is stored in the high-order bits
+    private static final int RUNNING    = -1 << COUNT_BITS;
+    private static final int SHUTDOWN   =  0 << COUNT_BITS;
+    private static final int STOP       =  1 << COUNT_BITS;
+    private static final int TIDYING    =  2 << COUNT_BITS;
+    private static final int TERMINATED =  3 << COUNT_BITS;
+
+    // Packing and unpacking ctl
+    private static int runStateOf(int c)     { return c & ~CAPACITY; }
+    private static int workerCountOf(int c)  { return c & CAPACITY; }
+    private static int ctlOf(int rs, int wc) { return rs | wc; }
+
     public void execute(Runnable command) {
-            if (command == null)
-                throw new NullPointerException();
-            /*
-             * Proceed in 3 steps: 线程池执行过程分三步
-             * 1. 如果核心线程较少（少于设定的核心线程数参数的值），则初始化一个核心线程来执行命令作为它的第一个任务。
-             * 此次调用会自动检查运行状态及工作线程数来避免错误状态
-             * 
-             * 2. 如果一个任务进入阻塞队列，之后我们依然需要二次检查我们是否需要添加一个线程
-             * 任务进入阻塞队列，一般说明核心线程数已到达最大值，需要建立非核心线程来执行任务???
-             * 线程创建后从阻塞队列获取任务来执行，线程池预热结束。当然，线程池可以提前预热，即在初始化时就创建一定量的核心线程数。
-             *
-             * 3. 如果我们无法将任务入队，说明阻塞队列已满或者是线程池已经关闭
-             */
-            int c = ctl.get();
-            if (workerCountOf(c) < corePoolSize) {  
-                if (addWorker(command, true))
-                    return;
-                c = ctl.get();
-            }
-            if (isRunning(c) && workQueue.offer(command)) {    //将任务添加到队列
-                int recheck = ctl.get();
-                if (! isRunning(recheck) && remove(command))
-                    reject(command);
-                else if (workerCountOf(recheck) == 0)
-                    addWorker(null, false);
-            }
-            else if (!addWorker(command, false))
+        if (command == null)
+            throw new NullPointerException();
+        /*
+         * Proceed in 3 steps: 线程池执行过程分三步
+         * 1. 如果核心线程较少（少于设定的核心线程数参数的值），则初始化一个核心线程来执行命令作为它的第一个任务。
+         * 此次调用会自动检查运行状态及工作线程数来避免错误状态
+         * 
+         * 2. 如果一个任务进入阻塞队列，之后我们依然需要二次检查我们是否需要添加一个线程
+         * 任务进入阻塞队列，一般说明核心线程数已到达最大值，需要建立非核心线程来执行任务???
+         * 线程创建后从阻塞队列获取任务来执行，线程池预热结束。当然，线程池可以提前预热，即在初始化时就创建一定量的核心线程数。
+         *
+         * 3. 如果我们无法将任务入队，说明阻塞队列已满或者是线程池已经关闭
+         */
+        int c = ctl.get();
+        if (workerCountOf(c) < corePoolSize) {  
+            if (addWorker(command, true))
+                return;
+            c = ctl.get();
+        }
+        if (isRunning(c) && workQueue.offer(command)) {    //将任务添加到队列
+            int recheck = ctl.get();
+            if (! isRunning(recheck) && remove(command))
                 reject(command);
+            else if (workerCountOf(recheck) == 0)
+                addWorker(null, false);
+        }
+        else if (!addWorker(command, false))
+            reject(command);
         }
         
+    
     private boolean addWorker(Runnable firstTask, boolean core) {
             retry:
             for (;;) {
-                int c = ctl.get();  //获取
-                int rs = runStateOf(c); //运行状态
+                int c = ctl.get();  //获取ctl
+                int rs = runStateOf(c); //获取运行状态
     
                 // Check if queue empty only if necessary.
-                if (rs >= SHUTDOWN &&
+                if (rs >= SHUTDOWN &&   
                     ! (rs == SHUTDOWN &&
                        firstTask == null &&
                        ! workQueue.isEmpty()))
                     return false;
     
                 for (;;) {
-                    int wc = workerCountOf(c);
+                    int wc = workerCountOf(c);  //计数
                     if (wc >= CAPACITY ||
                         wc >= (core ? corePoolSize : maximumPoolSize))
                         return false;
@@ -91,21 +110,22 @@ public class ThreadPoolExecutor{
                     // else CAS failed due to workerCount change; retry inner loop
                 }
             }
-    
+            //上述循环来对worker进行计数
+            //下列的代码是创建一个新的worker
             boolean workerStarted = false;
             boolean workerAdded = false;
             Worker w = null;
             try {
-                w = new Worker(firstTask);
+                w = new Worker(firstTask);  //创建worker
                 final Thread t = w.thread;
                 if (t != null) {
-                    final ReentrantLock mainLock = this.mainLock;
-                    mainLock.lock();
+                    final ReentrantLock mainLock = this.mainLock;   
+                    mainLock.lock();    //加锁
                     try {
                         // Recheck while holding lock.
                         // Back out on ThreadFactory failure or if
                         // shut down before lock acquired.
-                        int rs = runStateOf(ctl.get());
+                        int rs = runStateOf(ctl.get()); //得到状态
     
                         if (rs < SHUTDOWN ||
                             (rs == SHUTDOWN && firstTask == null)) {
@@ -133,7 +153,13 @@ public class ThreadPoolExecutor{
         }
 }
 ```
-addWorker(Runnable firstTask, boolean core) 源码分析
+### 源码分析
+ctl是一个32位整数，其中包含两个信息：  
+workerCount：有效线程数  
+runState：线程运行状态  
+为了将两个信息放在一个int变量里面，规定低29位来标识workerCount，高3位来标识runState
+  
+addWorker(Runnable firstTask, boolean core) 
 - 创建线程（是否为核心线程取决与参数 core）
 - 启动线程
 - 判断线程是否超过最大数量
