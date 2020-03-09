@@ -1,8 +1,12 @@
 # 线程池  
 频繁的创建线程、销毁线程所带来的问题  
 1. 线程创建不被限制，超出系统负载，会遇到服务挂掉等问题。
-2. 线程数远大于CPU核心数之后会带来频繁的线程切换，每个线程都想抢占CPU，而线程的上下文切换会带来额外开销。（用户态到内核态的切换）  
+2. 线程数远大于CPU核心数之后会带来频繁的线程切换，每个线程都想抢占CPU，而线程的上下文切换会带来额外开销。（用户态到内核态的切换）
+3. 无需区分核心或者是非核心线程，因为线程本身是无状态的，只要保留线程的数量即可，即保证线程池中的线程数是核心线程的数量即即可。  
  **应对措施：线程池化 提前创造好一定量的线程数，需要的时候实例化线程，用完后释放掉。**
+ 
+ Runnable是一个接口，Thread是实现该接口的类。
+ 
  手动创建线程池使用 
  ```java
 public class ThreadPoolExecutor{
@@ -37,15 +41,15 @@ public class ThreadPoolExecutor{
 public class ThreadPoolExecutor{
 
     private final AtomicInteger ctl = new AtomicInteger(ctlOf(RUNNING, 0)); //ctl标识线程池状态信息，是一个包含两个概念的原子整数
-    private static final int COUNT_BITS = Integer.SIZE - 3;
-    private static final int CAPACITY   = (1 << COUNT_BITS) - 1;
+    private static final int COUNT_BITS = Integer.SIZE - 3; //计数位数，32-3=29位
+    private static final int CAPACITY   = (1 << COUNT_BITS) - 1; //00011111111111111111111111111110
 
-    // runState is stored in the high-order bits
-    private static final int RUNNING    = -1 << COUNT_BITS;
-    private static final int SHUTDOWN   =  0 << COUNT_BITS;
-    private static final int STOP       =  1 << COUNT_BITS;
-    private static final int TIDYING    =  2 << COUNT_BITS;
-    private static final int TERMINATED =  3 << COUNT_BITS;
+    // runState is stored in the high-order bits    状态信息的二进制信息
+    private static final int RUNNING    = -1 << COUNT_BITS; //11100000000000000000000000000000
+    private static final int SHUTDOWN   =  0 << COUNT_BITS; //00000000000000000000000000000000
+    private static final int STOP       =  1 << COUNT_BITS; //00100000000000000000000000000000
+    private static final int TIDYING    =  2 << COUNT_BITS; //01000000000000000000000000000000 
+    private static final int TERMINATED =  3 << COUNT_BITS; //01100000000000000000000000000000
 
     // Packing and unpacking ctl
     private static int runStateOf(int c)     { return c & ~CAPACITY; }
@@ -116,8 +120,8 @@ public class ThreadPoolExecutor{
             boolean workerAdded = false;
             Worker w = null;
             try {
-                w = new Worker(firstTask);  //创建worker
-                final Thread t = w.thread;
+                w = new Worker(firstTask);  //创建worker，worker是一个实现runnable的类，可以认为是一个线程
+                final Thread t = w.thread;  //Worker类内部有一个thread对象
                 if (t != null) {
                     final ReentrantLock mainLock = this.mainLock;   
                     mainLock.lock();    //加锁
@@ -163,3 +167,4 @@ addWorker(Runnable firstTask, boolean core)
 - 创建线程（是否为核心线程取决与参数 core）
 - 启动线程
 - 判断线程是否超过最大数量
+
